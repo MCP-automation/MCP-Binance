@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Binance Trading Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #0f3460;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(0, 255, 136, 0.1);
+            border-radius: 4px;
+            border: 1px solid #00ff88;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(15, 52, 96, 0.8);
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card h3 {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #00ff88;
+            margin-bottom: 15px;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+
+        .metric-value.positive {
+            color: #00ff88;
+        }
+
+        .metric-value.negative {
+            color: #ff4444;
+        }
+
+        .equity-section {
+            grid-column: 1 / -1;
+        }
+
+        .positions-section {
+            grid-column: 1 / -1;
+        }
+
+        .positions-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .positions-table th {
+            background: rgba(0, 255, 136, 0.1);
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #0f3460;
+            font-weight: 600;
+            color: #00ff88;
+        }
+
+        .positions-table td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(0, 255, 136, 0.1);
+        }
+
+        .positions-table tr:hover {
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .risk-warning {
+            background: rgba(255, 68, 68, 0.1);
+            border: 1px solid #ff4444;
+            color: #ff8888;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 12px;
+        }
+
+        .chart-placeholder {
+            width: 100%;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            margin-top: 15px;
+        }
+
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .timestamp {
+            font-size: 11px;
+            color: #666;
+            margin-top: 10px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            border-top: 1px solid #0f3460;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Trading Dashboard</h1>
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                <span id="status">Connecting...</span>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>Account Balance</h3>
+                <div class="metric">
+                    <span class="metric-label">Current Equity</span>
+                    <span class="metric-value" id="equity">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Initial Capital</span>
+                    <span class="metric-value" id="initial">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total P&L</span>
+                    <span class="metric-value" id="pnl">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Return %</span>
+                    <span class="metric-value" id="pnl-pct">0.00%</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Risk Metrics</h3>
+                <div class="metric">
+                    <span class="metric-label">Drawdown</span>
+                    <span class="metric-value negative" id="drawdown">0.00%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Daily Loss</span>
+                    <span class="metric-value negative" id="daily-loss">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Daily Loss %</span>
+                    <span class="metric-value negative" id="daily-loss-pct">0.00%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Status</span>
+                    <span class="metric-value" id="risk-status">OK</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Positions</h3>
+                <div class="metric">
+                    <span class="metric-label">Open Positions</span>
+                    <span class="metric-value" id="open-positions">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Max Allowed</span>
+                    <span class="metric-value" id="max-positions">10</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Total Exposure</span>
+                    <span class="metric-value" id="exposure">$0.00</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Exposure %</span>
+                    <span class="metric-value" id="exposure-pct">0.00%</span>
+                </div>
+            </div>
+
+            <div class="card equity-section">
+                <h3>Equity Curve</h3>
+                <div class="chart-placeholder">
+                    📈 Equity history will appear here
+                </div>
+                <div class="timestamp" id="timestamp">Last update: --:--:--</div>
+            </div>
+
+            <div class="card positions-section">
+                <h3>Open Positions</h3>
+                <table class="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Qty</th>
+                            <th>Entry Price</th>
+                            <th>Stop Loss</th>
+                            <th>Take Profit</th>
+                            <th>Max Risk %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-tbody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #666;">No open positions</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Binance Trading Dashboard | Real-time updates via WebSocket</p>
+    </footer>
+
+    <script>
+        class TradingDashboard {
+            constructor() {
+                this.ws = null;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 10;
+                this.reconnectDelay = 3000;
+                this.connect();
+            }
+
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/updates`;
+                
+                try {
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onopen = () => {
+                        console.log('WebSocket connected');
+                        this.updateStatus('Connected', true);
+                        this.reconnectAttempts = 0;
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        const message = JSON.parse(event.data);
+                        this.handleMessage(message);
+                    };
+
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateStatus('Error', false);
+                    };
+
+                    this.ws.onclose = () => {
+                        console.log('WebSocket closed');
+                        this.updateStatus('Disconnected', false);
+                        this.attemptReconnect();
+                    };
+                } catch (error) {
+                    console.error('Connection error:', error);
+                    this.attemptReconnect();
+                }
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    console.log(`Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+                    setTimeout(() => this.connect(), this.reconnectDelay);
+                }
+            }
+
+            handleMessage(message) {
+                if (message.type === 'initial' || message.type === 'update') {
+                    this.updateDashboard(message.data);
+                } else if (message.type === 'pong') {
+                    console.log('Pong received');
+                }
+            }
+
+            updateDashboard(data) {
+                if (data.error) {
+                    console.error('Dashboard error:', data.error);
+                    return;
+                }
+
+                const account = data.account || {};
+                const risk = data.risk || {};
+                const positions = data.positions || {};
+
+                document.getElementById('equity').textContent = this.formatCurrency(account.equity);
+                document.getElementById('initial').textContent = this.formatCurrency(account.initial_equity);
+                document.getElementById('pnl').textContent = this.formatCurrency(account.total_pnl);
+                document.getElementById('pnl-pct').textContent = this.formatPercent(account.total_pnl_pct);
+                
+                document.getElementById('drawdown').textContent = this.formatPercent(risk.drawdown_pct);
+                document.getElementById('daily-loss').textContent = this.formatCurrency(risk.daily_loss);
+                document.getElementById('daily-loss-pct').textContent = this.formatPercent(risk.daily_loss_pct);
+                
+                const riskStatus = positions.is_within_limits ? '✓ OK' : '⚠ WARNING';
+                document.getElementById('risk-status').textContent = riskStatus;
+                
+                document.getElementById('open-positions').textContent = positions.open_count || 0;
+                document.getElementById('max-positions').textContent = positions.max_allowed || 10;
+                document.getElementById('exposure').textContent = this.formatCurrency(risk.total_exposure);
+                document.getElementById('exposure-pct').textContent = this.formatPercent(risk.exposure_pct);
+                
+                document.getElementById('timestamp').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+
+                if (data.summary && data.summary.open_positions && data.summary.open_positions > 0) {
+                    this.updatePositionsTable(data.summary);
+                }
+            }
+
+            updatePositionsTable(summary) {
+                const tbody = document.getElementById('positions-tbody');
+                if (!summary.open_positions || summary.open_positions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #666;">No open positions</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = summary.open_positions.map(pos => `
+                    <tr>
+                        <td><strong>${pos.symbol || 'N/A'}</strong></td>
+                        <td>${(pos.quantity || 0).toFixed(4)}</td>
+                        <td>$${(pos.entry_price || 0).toFixed(2)}</td>
+                        <td>${pos.stop_loss ? '$' + pos.stop_loss.toFixed(2) : 'N/A'}</td>
+                        <td>${pos.take_profit ? '$' + pos.take_profit.toFixed(2) : 'N/A'}</td>
+                        <td>${(pos.max_loss_pct || 0).toFixed(2)}%</td>
+                    </tr>
+                `).join('');
+            }
+
+            updateStatus(status, isConnected) {
+                const statusEl = document.getElementById('status');
+                const dotEl = document.querySelector('.status-dot');
+                statusEl.textContent = status;
+                dotEl.style.background = isConnected ? '#00ff88' : '#ff4444';
+            }
+
+            formatCurrency(value) {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD'
+                }).format(value || 0);
+            }
+
+            formatPercent(value) {
+                return `${(value || 0).toFixed(2)}%`;
+            }
+
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(message);
+                }
+            }
+
+            startHeartbeat() {
+                setInterval(() => {
+                    this.send('ping');
+                }, 30000);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const dashboard = new TradingDashboard();
+            dashboard.startHeartbeat();
+        });
+    </script>
+</body>
+</html>

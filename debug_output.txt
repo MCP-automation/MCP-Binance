@@ -1,0 +1,8 @@
+API Key: TsPWEa78...JA1z
+
+--- Testing Mainnet (binanceusdm) ---
+Connecting to Mainnet (binanceusdm)...
+  NETWORK ERROR: binanceusdm GET https://api.binance.com/sapi/v1/capital/config/getall?timestamp=1773595474432&recvWindow=10000&signature=35e74e1801ead2e35071d57331e5627c7c6bb34e5e4ee11b4f1084f85a845eb5
+
+--- Testing Testnet (Sandbox) ---
+  NETWORK ERROR: binance GET https://testnet.binance.vision/api/v3/exchangeInfo

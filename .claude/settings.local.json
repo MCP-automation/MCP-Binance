@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import urllib.request; r = urllib.request.urlopen\\(''https://api.binance.com/fapi/v1/ping'', timeout=10\\); print\\(''Binance reachable:'', r.status\\)\")"
+    ]
+  }
+}
