@@ -1,97 +1,137 @@
-# 🚀 BINANCE MCP TRADING BOT - COMPLETE SYSTEM
+# Binance MCP Trading Bot
 
-**Enterprise-grade automated trading system** for Binance with risk management, backtesting, Claude MCP integration, web dashboard, and Telegram notifications.
-
-## 📋 Quick Summary
-
-| Component | Status | Features |
-|-----------|--------|----------|
-| **Phase 1: Foundation** | ✅ | Security, Config, Database, Logging |
-| **Phase 2: Exchange** | ✅ | Spot, Futures (USD-M, COIN-M), Margin, WebSocket |
-| **Phase 3: Risk** | ✅ | 4 Guards, 4 Sizing Methods, Real-time Monitoring |
-| **Phase 4: Backtesting** | ✅ | 15 Timeframes, 20+ Metrics, No Look-ahead Bias |
-| **Phase 5: MCP Server** | ✅ | 6 Tools, Multi-turn Conversations, Claude Integration |
-| **Phase 6: Dashboard** | ✅ | Real-time WebSocket, REST API, Responsive UI |
-| **Phase 7: Notifications** | ✅ | Telegram, 10 Alert Types, Throttling |
-| **Phase 8: Packaging** | ✅ | Docker, docker-compose, Configuration |
+A Binance Futures trading system built as a Claude MCP server. Talk to it through Claude, and it handles everything from market data lookups to running autonomous trading bots — live or simulated.
 
 ---
 
-## 📦 What's Included
+## What it does
 
-- **82 Python files** (7,800+ lines)
-- **150+ comprehensive tests**
-- **0 errors** (100% compiled)
-- **10 API endpoints** + WebSocket
-- **6 MCP tools** for Claude
-- **10 alert types** with Telegram
-- **Complete Docker setup**
+- Executes trades on Binance Futures (USD-M, COIN-M, Spot, Margin)
+- Runs backtests across single symbols or hundreds at once
+- Operates fully autonomous bots that wake, compute signals, and trade on their own
+- Simulates trading with a paper account (no real money needed to test)
+- Guards all trades through a risk engine with per-trade and daily limits
+- Sends Telegram alerts for orders, SL/TP hits, and daily summaries
+- Exposes a live web dashboard at `localhost:8000`
+
+Everything is controlled through Claude via MCP — no UI required for trading.
 
 ---
 
-## 🚀 Quick Start
+## Setup
 
-### 1. Prerequisites
-
-```bash
-Python 3.12+
-Docker & Docker Compose (optional)
-Telegram Bot Token (optional)
-Binance API Keys
-```
-
-### 2. Installation
+**Requirements:** Python 3.12+, Binance API keys
 
 ```bash
-# Clone/extract repository
+git clone <repo>
 cd binance_mcp
 
-# Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
 cp .env.json.template .env.json
-# Edit .env.json with your credentials
-```
+# fill in your Binance API keys and optional Telegram config
 
-### 3. Run Standalone
-
-```bash
-# Start trading system
 python main.py
-
-# Access dashboard: http://localhost:8000
-# MCP server: Ready for Claude Cowork
 ```
 
-### 4. Run with Docker
+**Claude Desktop config** (`claude_desktop_config.json`):
 
-```bash
-# Build image
-docker build -t binance-trading-bot:latest .
-
-# Start services
-docker-compose up -d
-
-# View logs
-docker logs -f binance-trading-bot
+```json
+{
+  "mcpServers": {
+    "binance-trading-bot": {
+      "command": "python",
+      "args": ["/path/to/binance_mcp/main.py"]
+    }
+  }
+}
 ```
+
+Once connected, Claude has access to all 29 tools below.
 
 ---
 
-## ⚙️ Configuration (.env.json)
+## MCP Tools (29 total)
+
+### Trading
+
+| Tool | What it does |
+|------|-------------|
+| `place_market_order` | Execute a market order instantly. Smart defaults for SL/TP/leverage — no need to specify everything. |
+| `place_limit_order` | Place a limit order with SL/TP and risk validation. |
+| `close_position` | Close an open position at a given price. |
+| `cancel_order` | Cancel an open order by order ID. |
+| `set_leverage` | Set leverage (1–125x) for a futures symbol before trading. |
+| `get_positions` | Fetch open positions filtered by market type. |
+| `get_account_balance` | Real Binance account state: wallet balance, available margin, unrealized PnL, all open positions. |
+
+### Market Data
+
+| Tool | What it does |
+|------|-------------|
+| `get_ticker` | Latest 24h price, bid/ask, volume, and price change for any symbol. |
+| `get_order_book` | Bids and asks at configurable depth (up to 100 levels). |
+| `get_klines` | Historical OHLCV candles. Supports all 15 timeframes from 1m to 1M. |
+| `get_funding_rate` | Current funding rate, mark price, index price, and next funding time. |
+| `get_open_interest` | Total open interest for a futures symbol. |
+| `get_recent_trades` | Recent public trades (up to 1000). |
+| `get_futures_symbols` | Full list of active Binance USD-M perpetual futures (~500–600 symbols). |
+
+### Backtesting
+
+| Tool | What it does |
+|------|-------------|
+| `run_backtest` | Custom strategy backtest with user-defined entry/exit conditions. |
+| `run_futures_backtest` | Leveraged futures backtest for a single symbol using a built-in strategy. Handles multi-year date ranges via paginated candle fetch. |
+| `scan_futures_backtest` | Run a strategy across up to 100 symbols at once. Returns ranked results by Sharpe ratio. |
+
+**Built-in strategies:** `ema_crossover` (9/21 EMA), `sma_crossover` (10/30 SMA), `momentum` (20-period), `mean_reversion` (RSI 14)
+
+### Paper Trading
+
+All paper sessions are isolated, in-memory, and support leverage 1–125x.
+
+| Tool | What it does |
+|------|-------------|
+| `start_paper_trading` | Create a virtual trading session with a starting balance. Returns a session ID. |
+| `stop_paper_trading` | Close a paper session (existing positions stay, no new ones). |
+| `get_paper_positions` | Open paper positions with unrealized PnL. |
+| `get_paper_balance` | Virtual equity, available balance, realized and unrealized PnL. |
+| `get_paper_trade_history` | Full trade history for a session. |
+| `reset_paper_account` | Wipe positions and history, restore initial balance. |
+
+### Autonomous Bots
+
+Bots run as background asyncio tasks. Each bot wakes every ¼ candle period (minimum 15s), reads the last *completed* bar, computes the signal, and places or closes a position automatically.
+
+| Tool | What it does |
+|------|-------------|
+| `start_live_bot` | Start an autonomous bot. Set `is_paper=true` for simulation or `false` for live real-money trading. |
+| `stop_live_bot` | Stop a bot. Open positions are closed at market price before shutdown. |
+| `get_live_bot_status` | Bot state, current position, cumulative PnL, win rate, recent signals, trade history. |
+| `list_live_bots` | All running bots and their current status. |
+
+### Risk & Sizing
+
+| Tool | What it does |
+|------|-------------|
+| `get_risk_metrics` | Internal risk engine state: per-trade limits, daily drawdown tracker, position exposure. |
+| `calculate_position_size` | Optimal position size using FIXED_PERCENTAGE, KELLY_CRITERION, VOLATILITY_BASED, or ATR_BASED method. |
+
+---
+
+## Configuration
 
 ```json
 {
   "binance": {
-    "api_key": "YOUR_BINANCE_API_KEY",
-    "api_secret": "YOUR_BINANCE_API_SECRET",
-    "testnet": true,
-    "sandbox": true
+    "api_key": "YOUR_API_KEY",
+    "api_secret": "YOUR_API_SECRET",
+    "testnet": true
   },
   "telegram": {
-    "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
-    "default_chat_id": "YOUR_TELEGRAM_CHAT_ID"
+    "bot_token": "YOUR_BOT_TOKEN",
+    "default_chat_id": "YOUR_CHAT_ID"
   },
   "risk": {
     "max_trade_loss_pct": 2.0,
@@ -101,8 +141,7 @@ docker logs -f binance-trading-bot
   },
   "dashboard": {
     "host": "0.0.0.0",
-    "port": 8000,
-    "debug": false
+    "port": 8000
   },
   "database": {
     "path": "./data/trading.db",
@@ -111,333 +150,182 @@ docker logs -f binance-trading-bot
   },
   "logging": {
     "level": "INFO",
-    "log_dir": "./logs",
-    "max_file_size_mb": 10,
-    "backup_count": 5
+    "log_dir": "./logs"
   }
 }
 ```
 
----
-
-## 🌐 Dashboard Access
-
-**URL**: `http://localhost:8000`
-
-**Real-time Metrics**:
-- Account equity & P&L
-- Risk exposure & drawdown
-- Open positions & details
-- Trade history
-- Daily statistics
-
-**WebSocket Updates**: Automatic real-time sync
+Start on `testnet: true` until you've verified behavior with your strategies.
 
 ---
 
-## 🤖 Claude Integration (MCP)
+## Risk Engine
 
-Connect to Claude Cowork for:
+Every trade goes through four circuit breakers before execution:
 
-```python
-# Place orders
-place_market_order(symbol="BTCUSDT", side="BUY", quantity="0.1", market_type="SPOT")
+| Guard | Default | Behavior |
+|-------|---------|----------|
+| Per-trade max loss | 2% | Hard block on the individual order |
+| Daily drawdown kill-switch | 5% | Halts all new trades for the day |
+| Max open positions | 10 | Rejects new entries above the limit |
+| Portfolio concentration | 10% | Caps risk exposure per position |
 
-# Get positions
-get_positions(market_type="USDM_FUTURES")
-
-# View risk metrics
-get_risk_metrics()
-
-# Run backtest
-run_backtest(strategy_name="EMA", timeframe="1h", symbols="BTCUSDT,ETHUSDT", ...)
-
-# Calculate position size
-calculate_position_size(symbol="BTCUSDT", entry_price="45000", ...)
-```
-
-**6 Available Tools**:
-1. `place_market_order` - Execute orders
-2. `get_positions` - View open trades
-3. `close_position` - Exit positions
-4. `get_risk_metrics` - Risk status
-5. `run_backtest` - Historical testing
-6. `calculate_position_size` - Position sizing
+These limits are configurable in `.env.json`. The risk engine runs continuous checks every 5 seconds.
 
 ---
 
-## 📱 Telegram Alerts (10 Types)
+## Backtesting
 
-```
-✅ ORDER_EXECUTED         - Order placement
-✅ POSITION_CLOSED        - Position closure with P&L
-🚨 RISK_BREACH            - Critical risk violations
-⚠️  DAILY_LOSS_WARNING     - Daily loss approaching
-⚠️  DRAWDOWN_WARNING       - Drawdown approaching
-⚠️  MAX_POSITIONS_REACHED  - Position limit hit
-✅ TAKE_PROFIT_HIT        - TP triggered
-⚠️  STOP_LOSS_HIT          - SL triggered
-📊 DAILY_SUMMARY          - Daily statistics
-📈 STATUS_UPDATE          - Account status
-```
+The backtesting engine fetches real Binance candle data (paginated for large date ranges), runs tick-by-tick simulation with realistic slippage and commissions, and reports:
 
-**Configurable Throttling**: Prevent alert spam
-
----
-
-## 📊 Backtesting Engine
-
-**Features**:
-- 15 timeframes (1m to 1M)
-- No look-ahead bias (tick-by-tick simulation)
-- Realistic slippage & commission
-- 20+ performance metrics
-
-**Metrics Calculated**:
-- Return, CAGR, Sharpe ratio
+- Total return, CAGR, Sharpe ratio
 - Max drawdown, volatility
-- Win rate, profit factor
-- Recovery factor, expectancy
+- Win rate, profit factor, expectancy
+- Recovery factor
+
+`scan_futures_backtest` runs this across multiple symbols in sequence and surfaces the best performers — useful for finding which pairs a strategy actually works on before deploying capital.
 
 ---
 
-## 🛡️ Risk Management System
+## Security
 
-**4 Circuit Breakers**:
-1. Per-trade max loss (2% default) - Hard stop
-2. Daily drawdown kill-switch (5% default) - Halts all trading
-3. Max open positions (10 default) - Position limit
-4. Portfolio concentration (10% default) - Risk cap
+API keys are never stored in plaintext. The vault uses:
 
-**4 Position Sizing Methods**:
-1. Fixed percentage (2% per trade)
-2. Kelly criterion (optimal sizing)
-3. Volatility-based (ATR-adjusted)
-4. Adaptive selection (automatic)
+- **Fernet symmetric encryption** (from the `cryptography` library)
+- **PBKDF2 key derivation** with 480,000 iterations
+- Salt stored separately from the encrypted vault file
 
-**Real-time Monitoring**: 5-second updates
+All Binance API connections use SSL/TLS. Rate limiting is handled automatically.
 
 ---
 
-## 📈 Performance Characteristics
+## Dashboard
 
-| Operation | Time |
-|-----------|------|
-| Order validation | <1ms |
-| Position sizing | <2ms |
-| Risk monitoring | <10ms |
-| Dashboard load | <50ms |
-| Backtest (1000 candles) | <100ms |
-| Telegram send | <500ms |
+A live web dashboard runs at `http://localhost:8000` showing:
 
----
+- Account equity and PnL
+- Risk exposure and drawdown
+- Open positions
+- Trade history and daily stats
 
-## 🔒 Security Features
-
-- **API Keys**: Encrypted with Fernet
-- **Key Derivation**: PBKDF2 (480,000 iterations)
-- **Database**: SQLite with atomic writes
-- **Connections**: SSL/TLS for all APIs
-- **Rate Limiting**: Binance rate limit management
-- **Session Security**: Expiring credentials
+Updates via WebSocket — no manual refresh needed.
 
 ---
 
-## 📁 Project Structure
+## Telegram Alerts
+
+When configured, the bot sends alerts for:
+
+- Order executed / position closed (with PnL)
+- Risk breach (critical violations)
+- Daily loss warning / drawdown warning
+- Max positions reached
+- Take profit / stop loss triggered
+- Daily summary
+- Account status updates
+
+Alerts are throttled to prevent spam.
+
+---
+
+## Project Structure
 
 ```
 binance_mcp/
-├── core/                 # Phase 1: Foundation
-│   ├── security/         # Encryption, API keys
-│   ├── config/           # Configuration management
-│   ├── database/         # SQLite with async pooling
-│   └── logging/          # Structured JSON logs
-├── exchange/             # Phase 2: Binance Integration
-│   ├── clients/          # Spot, Futures, Margin
-│   ├── streams/          # WebSocket management
-│   └── types.py          # Domain models
-├── risk/                 # Phase 3: Risk Management
-│   ├── calculator.py     # Equity tracking
-│   ├── guards.py         # Circuit breakers
-│   ├── sizing.py         # Position sizing
-│   └── engine.py         # Real-time monitoring
-├── backtesting/          # Phase 4: Strategy Testing
-│   ├── data/             # Historical data fetching
-│   ├── engine/           # Simulation engine
-│   ├── metrics/          # Performance calculation
-│   └── strategies/       # Strategy configuration
-├── mcp/                  # Phase 5: Claude Integration
-│   ├── server/           # MCP protocol server
-│   ├── conversation/     # Multi-turn flows
-│   └── protocol.py       # Tool definitions
-├── dashboard/            # Phase 6: Web Interface
-│   ├── server.py         # FastAPI app
-│   ├── routes.py         # API endpoints
-│   ├── public/           # HTML/CSS/JS frontend
-│   └── manager.py        # Lifecycle
-├── notifications/        # Phase 7: Alerts
-│   ├── telegram/         # Telegram client
-│   └── orchestrator.py   # Alert management
-├── scripts/              # Phase 8: Packaging
-│   ├── config_manager.py # Environment config
-│   ├── deployment.py     # Docker builders
-│   └── startup.py        # Application startup
-├── tests/                # 150+ tests
-├── docs/                 # 9 documentation files
-├── requirements.txt      # Python dependencies
-├── Dockerfile            # Container image
-├── docker-compose.yml    # Multi-service setup
-└── README.md             # This file
+├── core/
+│   ├── security/        # Fernet vault, PBKDF2 key derivation
+│   ├── config/          # Config schema and manager
+│   ├── database/        # SQLite with async pooling (aiosqlite)
+│   └── logging/         # Structured logging
+├── exchange/
+│   ├── clients/         # Spot, USD-M Futures, COIN-M Futures, Margin
+│   ├── ccxt_client.py   # Async ccxt wrapper for futures data
+│   └── paper_session.py # Paper trading sessions
+├── risk/
+│   ├── guards.py        # Circuit breakers
+│   ├── sizing.py        # Position sizing methods
+│   └── manager.py       # Real-time risk monitoring
+├── backtesting/
+│   ├── engine/          # Tick-by-tick simulator
+│   ├── metrics/         # Performance metrics calculator
+│   └── orchestrator.py  # Backtest runner and scanner
+├── trading/
+│   └── autonomous_engine.py  # AutonomousBot + BotManager
+├── mcp_app/
+│   ├── server/runner.py # MCPServerRunner (all tool implementations)
+│   └── protocol.py      # Tool registry and dispatcher (29 tools)
+├── dashboard/
+│   ├── server.py        # FastAPI app
+│   ├── routes.py        # REST API endpoints
+│   └── public/          # Web frontend
+├── notifications/       # Telegram alerts
+├── requirements.txt
+├── Dockerfile
+└── docker-compose.yml
 ```
 
 ---
 
-## 🧪 Testing
+## Docker
 
-Run all tests:
 ```bash
+# Build and run
+docker build -t binance-trading-bot:latest .
+docker-compose up -d
+
+# Logs
+docker logs -f binance-trading-bot
+
+# With volume mounts for config and data
+docker run -d \
+  -p 8000:8000 \
+  -v $(pwd)/.env.json:/app/.env.json \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  binance-trading-bot:latest
+```
+
+---
+
+## Testing
+
+```bash
+# Run all tests
 pytest tests/ -v
-```
 
-Test specific phase:
-```bash
+# Specific test file
 pytest tests/integration/test_phase3_risk.py -v
-```
 
-Coverage:
-```bash
+# With coverage
 pytest tests/ --cov=. --cov-report=html
 ```
 
 ---
 
-## 📚 Documentation
+## Stack
 
-- `/docs/PHASE1_FOUNDATION.md` - Core infrastructure
-- `/docs/PHASE2_EXCHANGE.md` - Binance integration
-- `/docs/PHASE3_RISK.md` - Risk management
-- `/docs/PHASE4_BACKTESTING.md` - Backtesting engine
-- `/docs/PHASE5_MCP.md` - Claude integration
-- `/docs/PHASE6_DASHBOARD.md` - Web dashboard
-- `/docs/PHASE7_NOTIFICATIONS.md` - Telegram alerts
-- `/docs/PHASE8_PACKAGING.md` - Deployment guide
-
----
-
-## 🐳 Docker Commands
-
-```bash
-# Build image
-docker build -t binance-trading-bot:latest .
-
-# Run container
-docker run -d --name bot \
-  -p 8000:8000 \
-  -v $(pwd)/.env.json:/app/.env.json \
-  -v $(pwd)/logs:/app/logs \
-  -v $(pwd)/data:/app/data \
-  binance-trading-bot:latest
-
-# View logs
-docker logs -f bot
-
-# Stop container
-docker stop bot
-
-# With docker-compose
-docker-compose up -d
-docker-compose down
-docker-compose logs -f
-```
+| Layer | Library |
+|-------|---------|
+| MCP server | `mcp` |
+| Exchange API | `ccxt`, `aiohttp`, Binance REST |
+| Web dashboard | `fastapi`, `uvicorn`, `websockets` |
+| Data processing | `pandas`, `numpy` |
+| Security | `cryptography` (Fernet + PBKDF2) |
+| Database | `aiosqlite` (SQLite) |
+| Validation | `pydantic` |
+| HTTP client | `httpx`, `requests` |
 
 ---
 
-## ⚠️ Important Notes
+## Notes
 
-1. **API Keys**: Keep your credentials secure. Use environment variables in production.
-2. **Testnet First**: Always test on Binance testnet before live trading.
-3. **Risk Management**: Start with small position sizes and test risk limits.
-4. **Backups**: Database and logs are critical. Set up automatic backups.
-5. **Monitoring**: Monitor dashboard and logs regularly.
-
----
-
-## 🔧 Troubleshooting
-
-### Dashboard won't load
-```bash
-# Check server
-curl http://localhost:8000/api/health
-
-# Check logs
-tail -f logs/main.log
-```
-
-### Connection errors
-```bash
-# Verify API keys in .env.json
-# Check network connectivity
-# Verify Binance API is accessible
-```
-
-### High CPU usage
-```bash
-# Check WebSocket connections
-# Review risk monitoring interval
-# Check backtest operations
-```
+- Always test new strategies on testnet or paper mode first
+- The autonomous bot acts on the **last completed bar** — not the still-forming current candle
+- `scan_futures_backtest` can scan up to 100 symbols but will take time — use a smaller `max_symbols` for quick checks
+- Database and logs are written to `./data/` and `./logs/` — back these up if running long-term
 
 ---
 
-## 📞 Support
+## License
 
-- Check documentation in `/docs/`
-- Review test files for usage examples
-- Check logs in `logs/` directory
-- Review error messages in error-only log
-
----
-
-## ✅ Strict Quality Standards
-
-✓ No hardcoding (100% configurable)
-✓ No low-level code (high abstractions)
-✓ No comments (self-documenting)
-✓ No quick fixes (proper error handling)
-✓ No hallucinations (100% tested & verified)
-
----
-
-## 📊 Statistics
-
-- **82 Python files**
-- **7,800+ lines of code**
-- **150+ test cases**
-- **0 syntax errors**
-- **0 import errors**
-- **100% type safety**
-- **Production ready**
-
----
-
-## 🎯 Next Steps
-
-1. Configure `.env.json` with your credentials
-2. Start on testnet (sandbox=true)
-3. Test with small positions
-4. Monitor risk metrics
-5. Scale up gradually
-6. Monitor 24/7
-
----
-
-## 📝 License
-
-This trading system is provided as-is. Use at your own risk. Always test strategies on testnet before live trading.
-
----
-
-**Status**: ✅ **COMPLETE & PRODUCTION READY**
-
-**All 8 Phases Implemented** | **Full Documentation** | **Docker Support** | **Claude Integration** | **Enterprise Quality**
-
+Use at your own risk. This is a trading tool — real money can be lost. Test thoroughly before going live.
