@@ -104,6 +104,8 @@ def _simulate_strategy(
     strategy_name: str,
     lev: int,
     balance: float,
+    highs: np.ndarray = None,
+    lows: np.ndarray = None,
 ) -> dict:
     """Generate signals and simulate trades on pre-fetched OHLCV arrays.
 
@@ -140,6 +142,157 @@ def _simulate_strategy(
                 signals[i] = 1
             elif rsi_vals[i] > 70 and rsi_vals[i - 1] <= 70:
                 signals[i] = -1
+
+    elif strat in ("btc_trend", "btc_trend_v2"):
+        # ── Strategy 1 & 2: EMA50/200 trend-follow + ATR breakout + RSI + volume
+        # strategy1 (btc_trend): ATR/close > 0.008, volume > 1.05x — more signals
+        # strategy2 (btc_trend_v2): ATR/close > 0.015, volume > 1.2x — stricter
+        atr_thresh  = 0.008 if strat == "btc_trend" else 0.015
+        vol_mult    = 1.05  if strat == "btc_trend" else 1.20
+
+        ema50  = _ema(closes, 50)
+        ema200 = _ema(closes, 200)
+
+        # ATR(14): use high/low if available, else approximate from close-to-close
+        if highs is not None and lows is not None:
+            tr = np.maximum(highs - lows,
+                 np.maximum(np.abs(highs - np.roll(closes, 1)),
+                            np.abs(lows  - np.roll(closes, 1))))
+            tr[0] = highs[0] - lows[0]
+        else:
+            tr = np.abs(np.diff(closes, prepend=closes[0]))
+        atr14 = np.convolve(tr, np.ones(14) / 14, mode="full")[:len(closes)]
+
+        # RSI(14)
+        rsi_arr = _rsi(closes, 14)
+
+        # Highest-high of last 20 bars (shifted 1 to avoid lookahead)
+        hh20 = np.full(len(closes), np.nan)
+        if highs is not None:
+            for i in range(20, len(closes)):
+                hh20[i] = np.max(highs[i - 20 : i])
+        else:
+            for i in range(20, len(closes)):
+                hh20[i] = np.max(closes[i - 20 : i])
+
+        # Volume MA(20)
+        vol_ma20 = np.convolve(volumes, np.ones(20) / 20, mode="full")[:len(closes)]
+
+        for i in range(200, len(closes)):
+            if np.isnan(hh20[i]) or np.isnan(rsi_arr[i]):
+                continue
+            bull_regime  = ema50[i] > ema200[i]
+            high_atr     = (atr14[i] / (closes[i] + 1e-9)) > atr_thresh
+            breakout     = closes[i] > hh20[i]
+            not_overbought = rsi_arr[i] < 70
+            high_volume  = volumes[i] > vol_mult * vol_ma20[i]
+
+            if bull_regime and high_atr and breakout and not_overbought and high_volume:
+                signals[i] = 1   # LONG only
+
+    elif strat == "futures_trend":
+        # ── Strategy 3: Futures long+short, slippage + funding rate baked in
+        # Long:  EMA50>EMA200 + ATR breakout + close>HH20 + RSI<70 + vol spike
+        # Short: EMA50<EMA200 + ATR breakout + close<LL20 + RSI>30 + vol spike
+        ema50  = _ema(closes, 50)
+        ema200 = _ema(closes, 200)
+
+        if highs is not None and lows is not None:
+            tr = np.maximum(highs - lows,
+                 np.maximum(np.abs(highs - np.roll(closes, 1)),
+                            np.abs(lows  - np.roll(closes, 1))))
+            tr[0] = highs[0] - lows[0]
+        else:
+            tr = np.abs(np.diff(closes, prepend=closes[0]))
+        atr14 = np.convolve(tr, np.ones(14) / 14, mode="full")[:len(closes)]
+
+        rsi_arr  = _rsi(closes, 14)
+        vol_ma20 = np.convolve(volumes, np.ones(20) / 20, mode="full")[:len(closes)]
+
+        hh20 = np.full(len(closes), np.nan)
+        ll20 = np.full(len(closes), np.nan)
+        src_h = highs  if highs  is not None else closes
+        src_l = lows   if lows   is not None else closes
+        for i in range(20, len(closes)):
+            hh20[i] = np.max(src_h[i - 20 : i])
+            ll20[i] = np.min(src_l[i - 20 : i])
+
+        slippage     = 0.0003
+        funding_rate = 0.0001   # per 8h
+
+        in_trade   = False
+        direction  = 0
+        ep         = 0.0
+        stop_p     = 0.0
+        tgt_p      = 0.0
+        bars_held  = 0
+        units_t    = 0.0
+        equity_t   = balance
+
+        for i in range(200, len(closes)):
+            if np.isnan(hh20[i]) or np.isnan(rsi_arr[i]):
+                signals[i] = 0
+                continue
+
+            if not in_trade:
+                high_atr    = (atr14[i] / (closes[i] + 1e-9)) > 0.008
+                high_vol    = volumes[i] > 1.1 * vol_ma20[i]
+                long_sig    = (ema50[i] > ema200[i] and closes[i] > hh20[i]
+                               and rsi_arr[i] < 70 and high_atr and high_vol)
+                short_sig   = (ema50[i] < ema200[i] and closes[i] < ll20[i]
+                               and rsi_arr[i] > 30 and high_atr and high_vol)
+
+                if long_sig:
+                    direction = 1
+                    ep = closes[i] * (1 + slippage)
+                    sd = 1.5 * atr14[i]
+                    stop_p = ep - sd
+                    tgt_p  = ep + 3 * sd
+                    units_t = (equity_t * 0.01) / sd
+                    in_trade = True
+                    bars_held = 0
+                    signals[i] = 1
+                elif short_sig:
+                    direction = -1
+                    ep = closes[i] * (1 - slippage)
+                    sd = 1.5 * atr14[i]
+                    stop_p = ep + sd
+                    tgt_p  = ep - 3 * sd
+                    units_t = (equity_t * 0.01) / sd
+                    in_trade = True
+                    bars_held = 0
+                    signals[i] = -1
+            else:
+                bars_held += 1
+                h_i = highs[i] if highs is not None else closes[i]
+                l_i = lows[i]  if lows  is not None else closes[i]
+
+                exit_now = False
+                if direction == 1:
+                    if l_i <= stop_p:
+                        exit_now = True
+                    elif h_i >= tgt_p:
+                        exit_now = True
+                else:
+                    if h_i >= stop_p:
+                        exit_now = True
+                    elif l_i <= tgt_p:
+                        exit_now = True
+
+                if exit_now:
+                    xp = stop_p if (direction == 1 and l_i <= stop_p) or \
+                                   (direction == -1 and h_i >= stop_p) else tgt_p
+                    if direction == 1:
+                        xp *= (1 - slippage)
+                        raw_pnl = (xp - ep) * units_t
+                    else:
+                        xp *= (1 + slippage)
+                        raw_pnl = (ep - xp) * units_t
+                    raw_pnl -= abs(xp * units_t) * 0.0004
+                    raw_pnl -= abs(ep * units_t) * funding_rate * (bars_held / 8)
+                    equity_t += raw_pnl
+                    in_trade = False
+                    signals[i] = -direction  # mark exit
 
     else:  # sma_crossover
         sma_f = _sma(closes, 10)
@@ -903,9 +1056,11 @@ class MCPServerRunner:
                     ),
                 }
 
-            closes = np.array([float(c["close"]) for c in candles])
+            closes  = np.array([float(c["close"])  for c in candles])
             volumes = np.array([float(c["volume"]) for c in candles])
-            metrics = _simulate_strategy(closes, volumes, strategy_name, lev, balance)
+            highs   = np.array([float(c["high"])   for c in candles])
+            lows    = np.array([float(c["low"])    for c in candles])
+            metrics = _simulate_strategy(closes, volumes, strategy_name, lev, balance, highs, lows)
 
             if metrics["total_trades"] == 0:
                 return {
@@ -1030,10 +1185,12 @@ class MCPServerRunner:
                         )
                     else:
                         try:
-                            closes = np.array([float(c["close"]) for c in candles])
+                            closes  = np.array([float(c["close"])  for c in candles])
                             volumes = np.array([float(c["volume"]) for c in candles])
+                            highs   = np.array([float(c["high"])   for c in candles])
+                            lows    = np.array([float(c["low"])    for c in candles])
                             metrics = _simulate_strategy(
-                                closes, volumes, strategy_name, lev, balance
+                                closes, volumes, strategy_name, lev, balance, highs, lows
                             )
                         except Exception as sim_err:
                             logger.warning(
@@ -1348,7 +1505,8 @@ class MCPServerRunner:
             paper   = str(is_paper).lower() not in ("false", "0", "no")
             bal     = float(initial_balance)
 
-            valid_strategies = ("ema_crossover", "momentum", "mean_reversion", "sma_crossover")
+            valid_strategies = ("ema_crossover", "momentum", "mean_reversion", "sma_crossover",
+                               "btc_trend", "btc_trend_v2", "futures_trend")
             if strategy not in valid_strategies:
                 return {
                     "success": False,

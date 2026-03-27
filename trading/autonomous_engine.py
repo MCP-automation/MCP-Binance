@@ -58,6 +58,9 @@ _LOOKBACK: Dict[str, int] = {
     "momentum":       45,
     "mean_reversion": 35,
     "sma_crossover":  65,
+    "btc_trend":      250,
+    "btc_trend_v2":   250,
+    "futures_trend":  250,
 }
 
 
@@ -182,7 +185,13 @@ class AutonomousBot:
     # Signal generation
     # ------------------------------------------------------------------
 
-    def _compute_signals(self, closes: np.ndarray, volumes: np.ndarray) -> np.ndarray:
+    def _compute_signals(
+        self,
+        closes: np.ndarray,
+        volumes: np.ndarray,
+        highs: np.ndarray = None,
+        lows: np.ndarray = None,
+    ) -> np.ndarray:
         """Return a +1 / -1 / 0 signal array aligned with *closes*."""
         n       = len(closes)
         signals = np.zeros(n)
@@ -215,6 +224,67 @@ class AutonomousBot:
                 elif rsi_v[i] > 70 and rsi_v[i - 1] <= 70:
                     signals[i] = -1.0
 
+        elif strat in ("btc_trend", "btc_trend_v2"):
+            atr_thresh = 0.008 if strat == "btc_trend" else 0.015
+            vol_mult   = 1.05  if strat == "btc_trend" else 1.20
+            ema50  = _ema(closes, 50)
+            ema200 = _ema(closes, 200)
+            if highs is not None and lows is not None:
+                tr = np.maximum(highs - lows,
+                     np.maximum(np.abs(highs - np.roll(closes, 1)),
+                                np.abs(lows  - np.roll(closes, 1))))
+                tr[0] = highs[0] - lows[0]
+            else:
+                tr = np.abs(np.diff(closes, prepend=closes[0]))
+            atr14    = np.convolve(tr, np.ones(14) / 14, mode="full")[:n]
+            rsi_arr  = _rsi(closes, 14)
+            vol_ma20 = np.convolve(volumes, np.ones(20) / 20, mode="full")[:n]
+            src_h = highs if highs is not None else closes
+            hh20  = np.full(n, np.nan)
+            for i in range(20, n):
+                hh20[i] = np.max(src_h[i - 20 : i])
+            for i in range(200, n):
+                if np.isnan(hh20[i]) or np.isnan(rsi_arr[i]):
+                    continue
+                if (ema50[i] > ema200[i]
+                        and (atr14[i] / (closes[i] + 1e-9)) > atr_thresh
+                        and closes[i] > hh20[i]
+                        and rsi_arr[i] < 70
+                        and volumes[i] > vol_mult * vol_ma20[i]):
+                    signals[i] = 1.0
+
+        elif strat == "futures_trend":
+            ema50  = _ema(closes, 50)
+            ema200 = _ema(closes, 200)
+            if highs is not None and lows is not None:
+                tr = np.maximum(highs - lows,
+                     np.maximum(np.abs(highs - np.roll(closes, 1)),
+                                np.abs(lows  - np.roll(closes, 1))))
+                tr[0] = highs[0] - lows[0]
+            else:
+                tr = np.abs(np.diff(closes, prepend=closes[0]))
+            atr14    = np.convolve(tr, np.ones(14) / 14, mode="full")[:n]
+            rsi_arr  = _rsi(closes, 14)
+            vol_ma20 = np.convolve(volumes, np.ones(20) / 20, mode="full")[:n]
+            src_h = highs if highs is not None else closes
+            src_l = lows  if lows  is not None else closes
+            hh20  = np.full(n, np.nan)
+            ll20  = np.full(n, np.nan)
+            for i in range(20, n):
+                hh20[i] = np.max(src_h[i - 20 : i])
+                ll20[i] = np.min(src_l[i - 20 : i])
+            for i in range(200, n):
+                if np.isnan(hh20[i]) or np.isnan(rsi_arr[i]):
+                    continue
+                high_atr = (atr14[i] / (closes[i] + 1e-9)) > 0.008
+                high_vol = volumes[i] > 1.1 * vol_ma20[i]
+                if (ema50[i] > ema200[i] and closes[i] > hh20[i]
+                        and rsi_arr[i] < 70 and high_atr and high_vol):
+                    signals[i] = 1.0
+                elif (ema50[i] < ema200[i] and closes[i] < ll20[i]
+                        and rsi_arr[i] > 30 and high_atr and high_vol):
+                    signals[i] = -1.0
+
         else:  # sma_crossover (default fallback)
             sf = _sma(closes, 10)
             ss = _sma(closes, 30)
@@ -244,9 +314,11 @@ class AutonomousBot:
 
         closes  = np.array([float(c["close"])  for c in candles])
         volumes = np.array([float(c["volume"]) for c in candles])
+        highs   = np.array([float(c["high"])   for c in candles])
+        lows    = np.array([float(c["low"])    for c in candles])
         current_price = closes[-1]
 
-        signals  = self._compute_signals(closes, volumes)
+        signals  = self._compute_signals(closes, volumes, highs, lows)
         last_sig = signals[-2] if len(signals) >= 2 else 0.0   # last *completed* bar
         prev_sig = signals[-3] if len(signals) >= 3 else 0.0
 
